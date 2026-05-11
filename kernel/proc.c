@@ -123,6 +123,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->trace_mask = 0;
   p->state = USED;
 
   // Allocate a trapframe page.
@@ -272,6 +273,7 @@ kfork(void)
     return -1;
   }
   np->sz = p->sz;
+  np->trace_mask = p->trace_mask;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
