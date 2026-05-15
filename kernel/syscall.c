@@ -100,6 +100,7 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_trace(void);
+extern uint64 sys_getcounts(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -126,6 +127,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_trace]   sys_trace,
+[SYS_getcounts] sys_getcounts,
 };
 
 // Helper to print a single character with proper escaping
@@ -317,6 +319,10 @@ syscall(void)
     // Call the actual syscall
     p->trapframe->a0 = syscalls[num]();
     
+    if(num > 0 && num < 23)
+    p->syscall_counts[num]++;
+
+
     // Print return value if tracing
     if(p->trace_mask & (1 << num)) {
       if(num == SYS_exit) {

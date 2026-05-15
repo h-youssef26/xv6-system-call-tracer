@@ -93,6 +93,7 @@ struct proc {
   int pid;                     // Process ID
 
   int trace_mask;              // system call trace mask
+  int syscall_counts[23];      // counts per syscall number for strace -c
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
