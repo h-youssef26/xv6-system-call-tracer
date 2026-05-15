@@ -17,7 +17,11 @@
 
 volatile int panicking = 0; // printing a panic message
 volatile int panicked = 0; // spinning forever at end of a panic
+int trace_redirect_to_file = 0;
+void trace_putc(char c);
 
+// Intercepts character streams coming out of printf, printint, and printptr
+#define consputc(c) { if(trace_redirect_to_file) trace_putc(c); else consputc(c); }
 // lock to avoid interleaving concurrent printf's.
 static struct {
   struct spinlock lock;

@@ -4,6 +4,9 @@
 #include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 #include "syscall.h"
 #include "defs.h"
 
@@ -301,30 +304,92 @@ print_syscall_args(int num, struct trapframe *tf)
       printf("syscall_%d", num);
   }
 }
+// A static kernel buffer to hold the text of a single trace line
+static char trace_buf[512];
+static int trace_buf_idx = 0;
+
+// Instead of writing to the file... collect characters in memory
+void
+trace_putc(char c)
+{
+  if (trace_buf_idx < sizeof(trace_buf) - 1) {
+    trace_buf[trace_buf_idx++] = c;
+  }
+}
+ 
+// Flushes the accumulated buffer directly to txt file
+static void
+flush_trace_buffer(struct file *f)
+{
+  if (trace_buf_idx == 0 || !f || f->type != FD_INODE || !f->ip) {
+    trace_buf_idx = 0; 
+    return;
+  }
+
+  begin_op();
+  ilock(f->ip);
+  
+  int r = writei(f->ip, 0, (uint64)trace_buf, f->off, trace_buf_idx);
+  if (r > 0) {
+    f->off += r;
+  }
+  
+  iunlock(f->ip);
+  end_op();
+
+  // Clear the buffer for the next system call
+  trace_buf_idx = 0; 
+}
 
 void
 syscall(void)
 {
   int num;
   struct proc *p = myproc();
+  extern int trace_redirect_to_file;
 
   num = p->trapframe->a7;
   
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    // Check if this syscall should be traced
-    if(p->trace_mask & (1 << num)) {
+
+    int is_summary_mode = (p->trace_mask & (1 << 30));
+
+
+    int clean_mask = p->trace_mask & ~(1 << 30);
+
+
+    int tracing_to_file = 0;
+    if (p->ofile[2] && p->ofile[2]->type == FD_INODE) {
+      tracing_to_file = 1;
+    }
+
+    //handle trace printing before the system call runs
+    if(!is_summary_mode && (clean_mask & (1 << num))) {
+      if(tracing_to_file) {
+        trace_redirect_to_file = 1; //route to trace_buf memory
+      }
+       
       print_syscall_args(num, p->trapframe);
+      
+      trace_redirect_to_file = 0;
     }
     
-    // Call the actual syscall
+    //call the actual system call
     p->trapframe->a0 = syscalls[num]();
     
-    if(num > 0 && num < 23)
-    p->syscall_counts[num]++;
+    // Only increment tracking counters if the executed syscall matches the filtered mask
+    if(num > 0 && num < 24) {
+      if(clean_mask & (1 << num)) {
+        p->syscall_counts[num]++;
+      }
+    }
 
+    //handle trace printing after the system call runs
+    if(!is_summary_mode && (clean_mask & (1 << num))) {
+      if(tracing_to_file) {
+        trace_redirect_to_file = 1;
+      }
 
-    // Print return value if tracing
-    if(p->trace_mask & (1 << num)) {
       if(num == SYS_exit) {
         printf(" = ?\n");
       } else if(num == SYS_exec) {
@@ -332,7 +397,15 @@ syscall(void)
       } else {
         printf(" = %ld\n", p->trapframe->a0);
       }
+
+      trace_redirect_to_file = 0;
+
+      //flush buffer to file only if we are targeting a file
+      if(tracing_to_file) {
+        flush_trace_buffer(p->ofile[2]);
+      }
     }
+
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
