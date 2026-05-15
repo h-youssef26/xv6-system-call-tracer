@@ -12,7 +12,7 @@ int
 fetchaddr(uint64 addr, uint64 *ip)
 {
   struct proc *p = myproc();
-  if(addr >= p->sz || addr+sizeof(uint64) > p->sz) // both tests needed, in case of overflow
+  if(addr >= p->sz || addr+sizeof(uint64) > p->sz)
     return -1;
   if(copyin(p->pagetable, (char *)ip, addr, sizeof(*ip)) != 0)
     return -1;
@@ -60,8 +60,6 @@ argint(int n, int *ip)
 }
 
 // Retrieve an argument as a pointer.
-// Doesn't check for legality, since
-// copyin/copyout will do that.
 void
 argaddr(int n, uint64 *ip)
 {
@@ -101,8 +99,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
-
 extern uint64 sys_trace(void);
+
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
@@ -130,63 +128,208 @@ static uint64 (*syscalls[])(void) = {
 [SYS_trace]   sys_trace,
 };
 
-static char *syscall_names[] = {
-  [SYS_fork] "fork",
-  [SYS_exit] "exit",
-  [SYS_wait] "wait",
-  [SYS_pipe] "pipe",
-  [SYS_read] "read",
-  [SYS_kill] "kill",
-  [SYS_exec] "exec",
-  [SYS_fstat] "fstat",
-  [SYS_chdir] "chdir",
-  [SYS_dup] "dup",
-  [SYS_getpid] "getpid",
-  [SYS_sbrk] "sbrk",
-  [SYS_pause] "pause",
-  [SYS_uptime] "uptime",
-  [SYS_open] "open",
-  [SYS_write] "write",
-  [SYS_mknod] "mknod",
-  [SYS_unlink] "unlink",
-  [SYS_link] "link",
-  [SYS_mkdir] "mkdir",
-  [SYS_close] "close",
-  [SYS_trace] "trace",
-};
+// Helper to print a single character with proper escaping
+static void
+print_char(unsigned char c)
+{
+  if(c >= 32 && c < 127) {
+    if(c == '"') printf("\\\"");
+    else if(c == '\\') printf("\\\\");
+    else printf("%c", c);
+  } else if(c == '\n') {
+    printf("\\n");
+  } else if(c == '\t') {
+    printf("\\t");
+  } else if(c == '\r') {
+    printf("\\r");
+  } else if(c == '\0') {
+    printf("\\0");
+  } else {
+    printf("\\x%02x", c);
+  }
+}
+
+// Print syscall arguments based on syscall type
+static void
+print_syscall_args(int num, struct trapframe *tf)
+{
+  char buf[256];
+  char path[256];
+  int i;
+  
+  switch(num) {
+    case SYS_fork:
+      printf("fork()");
+      break;
+      
+    case SYS_exit:
+      printf("exit(%ld)", tf->a0);
+      break;
+      
+    case SYS_wait:
+      printf("wait(%ld)", tf->a1);
+      break;
+      
+    case SYS_pipe:
+      printf("pipe(%ld)", tf->a0);
+      break;
+      
+    case SYS_read:
+      printf("read(%ld, %ld, %ld)", tf->a0, tf->a1, tf->a2);
+      break;
+      
+    case SYS_kill:
+      printf("kill(%ld)", tf->a0);
+      break;
+      
+    case SYS_exec:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("exec(\"%s\", %ld)", path, tf->a1);
+      } else {
+        printf("exec(?, %ld)", tf->a1);
+      }
+      break;
+      
+    case SYS_fstat:
+      printf("fstat(%ld, %ld)", tf->a0, tf->a1);
+      break;
+      
+    case SYS_chdir:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("chdir(\"%s\")", path);
+      } else {
+        printf("chdir(?)");
+      }
+      break;
+      
+    case SYS_dup:
+      printf("dup(%ld)", tf->a0);
+      break;
+      
+    case SYS_getpid:
+      printf("getpid()");
+      break;
+      
+    case SYS_sbrk:
+      printf("sbrk(%ld)", tf->a0);
+      break;
+
+    case SYS_pause:
+      printf("pause()");
+      break;
+      
+    case SYS_uptime:
+      printf("uptime()");
+      break;
+      
+    case SYS_open:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("open(\"%s\", %ld)", path, tf->a1);
+      } else {
+        printf("open(?, %ld)", tf->a1);
+      }
+      break;
+      
+    case SYS_write:
+      printf("write(%ld, \"", tf->a0);
+      
+      // Use copyin() for arbitrary binary data
+      int print_len = tf->a2 < 40 ? tf->a2 : 40;
+      
+      if(copyin(myproc()->pagetable, buf, tf->a1, print_len) >= 0) {
+        for(i = 0; i < print_len; i++) {
+          print_char((unsigned char)buf[i]);
+        }
+        if(print_len < tf->a2) {
+          printf("...");
+        }
+      } else {
+        printf("?");
+      }
+      printf("\", %ld)", tf->a2);
+      break;
+      
+    case SYS_mknod:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("mknod(\"%s\", %ld, %ld)", path, tf->a1, tf->a2);
+      } else {
+        printf("mknod(?, %ld, %ld)", tf->a1, tf->a2);
+      }
+      break;
+      
+    case SYS_unlink:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("unlink(\"%s\")", path);
+      } else {
+        printf("unlink(?)");
+      }
+      break;
+      
+    case SYS_link:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("link(\"%s\", ", path);
+      } else {
+        printf("link(?, ");
+      }
+      
+      if(copyinstr(myproc()->pagetable, buf, tf->a1, 256) >= 0) {
+        printf("\"%s\")", buf);
+      } else {
+        printf("?)");
+      }
+      break;
+      
+    case SYS_mkdir:
+      if(copyinstr(myproc()->pagetable, path, tf->a0, 256) >= 0) {
+        printf("mkdir(\"%s\")", path);
+      } else {
+        printf("mkdir(?)");
+      }
+      break;
+      
+    case SYS_close:
+      printf("close(%ld)", tf->a0);
+      break;
+      
+    case SYS_trace:
+      printf("trace(%ld)", tf->a0);
+      break;
+      
+    default:
+      printf("syscall_%d", num);
+  }
+}
 
 void
 syscall(void)
 {
   int num;
-  int ret;
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
-
-  if(num <= 0 || num >= NELEM(syscalls) || syscalls[num] == 0) {
-    printf("%d %s: unknown sys call %d\n",
-           p->pid, p->name, num);
-    p->trapframe->a0 = -1;
-    return;
-  }
-
-  ret = syscalls[num]();
-  p->trapframe->a0 = ret;
-
-  if((p->trace_mask & (1 << num)) != 0) {
-
-  // Ignore write syscalls
-  if(num != SYS_write) {
-
-    char *name = "unknown";
-
-    if(num >= 0 && num < NELEM(syscall_names) && syscall_names[num]) {
-      name = syscall_names[num];
+  
+  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    // Check if this syscall should be traced
+    if(p->trace_mask & (1 << num)) {
+      print_syscall_args(num, p->trapframe);
     }
-
-    printf("%s() = %d\n", name, ret);
+    
+    // Call the actual syscall
+    p->trapframe->a0 = syscalls[num]();
+    
+    // Print return value if tracing
+    if(p->trace_mask & (1 << num)) {
+      if(num == SYS_exit) {
+        printf(" = ?\n");
+      } else if(num == SYS_exec) {
+        printf(" = -1 (ENOEXEC)\n");
+      } else {
+        printf(" = %ld\n", p->trapframe->a0);
+      }
+    }
+  } else {
+    printf("%d %s: unknown sys call %d\n",
+            p->pid, p->name, num);
+    p->trapframe->a0 = -1;
   }
 }
-}
-
