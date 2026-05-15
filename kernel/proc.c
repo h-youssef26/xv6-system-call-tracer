@@ -124,6 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->trace_mask = 0;
+  memset(p->syscall_counts, 0, sizeof(p->syscall_counts));
   p->state = USED;
 
   // Allocate a trapframe page.
@@ -355,6 +356,10 @@ kexit(int status)
   acquire(&p->lock);
 
   p->xstate = status;
+
+
+  // copy syscall counts to parent for strace -c
+memmove(p->parent->syscall_counts, p->syscall_counts, sizeof(p->syscall_counts));
   p->state = ZOMBIE;
 
   release(&wait_lock);

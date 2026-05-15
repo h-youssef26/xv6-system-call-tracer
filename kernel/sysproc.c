@@ -116,3 +116,15 @@ sys_trace(void)
   myproc()->trace_mask = mask;
   return 0;
 }
+
+uint64
+sys_getcounts(void)
+{
+  uint64 addr;
+  argaddr(0, &addr);
+  struct proc *p = myproc();
+  if(copyout(p->pagetable, addr, (char*)p->syscall_counts,
+             sizeof(p->syscall_counts)) < 0)
+    return -1;
+  return 0;
+}

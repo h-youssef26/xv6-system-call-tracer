@@ -54,6 +54,50 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  // -c flag: count mode
+ if(strcmp(argv[1], "-c") == 0){
+    if(argc < 3){
+        fprintf(2, "Usage: strace -c <command>\n");
+        exit(1);
+    }
+
+    char *sysnames[] = {
+        "",
+        "fork", "exit", "wait", "pipe", "read",
+        "kill", "exec", "fstat", "chdir", "dup",
+        "getpid", "sbrk", "pause", "uptime", "open",
+        "write", "mknod", "unlink", "link", "mkdir",
+        "close", "trace", "getcounts"
+    };
+
+    int before[24];
+    int after[24];
+
+    // get counts before in THIS process
+    getcounts(before);
+
+    // run the command in this same process after fork
+    int pid = fork();
+    if(pid == 0){
+        exec(argv[2], &argv[2]);
+        fprintf(2, "strace: exec %s failed\n", argv[2]);
+        exit(1);
+    }
+    wait(0);
+
+    // get counts after
+    getcounts(after);
+
+    printf("syscall              count\n");
+    printf("----------------------------\n");
+    for(int i = 1; i < 24; i++){
+        int diff = after[i] - before[i];
+        if(diff > 0)
+            printf("%s: %d\n", sysnames[i], diff);
+    }
+    exit(0);
+}
+
   if(strcmp(argv[1], "-a") == 0){
     mask = TRACE_ALL;
     start = 2;
