@@ -59,29 +59,49 @@ main(int argc, char *argv[])
     start = 2;
   } else if(strcmp(argv[1], "-e") == 0){
     if(argc < 4){
-      fprintf(2, "strace: -e option must be of form: -e trace=syscall\n");
+      fprintf(2, "strace: -e option must be of form: -e trace=syscall[,syscall...] command [args...]\n");
       exit(1);
     }
 
     char *arg = argv[2];
     if(strncmp(arg, "trace=", 6) != 0){
-      fprintf(2, "strace: -e option must be of form: -e trace=syscall\n");
+      fprintf(2, "strace: -e option must be of form: -e trace=syscall[,syscall...]\n");
       exit(1);
     }
 
-    char *syscall_name = arg + 6;
-    if(strlen(syscall_name) == 0){
+    char *syscall_list = arg + 6;
+    if(strlen(syscall_list) == 0){
       fprintf(2, "strace: missing syscall name\n");
       exit(1);
     }
 
-    int num = syscall_name_to_num(syscall_name);
-    if(num == -1){
-      fprintf(2, "strace: unknown syscall: %s\n", syscall_name);
-      exit(1);
+    mask = 0;
+    char *start_name = syscall_list;
+    for(int i = 0; ; i++){
+      char c = syscall_list[i];
+      if(c == ',' || c == '\0'){
+        int len = syscall_list + i - start_name;
+        char name_buf[128];
+        if(len >= (int)sizeof(name_buf)){
+          fprintf(2, "strace: syscall name too long\n");
+          exit(1);
+        }
+        strncpy(name_buf, start_name, len);
+        name_buf[len] = '\0';
+
+        int num = syscall_name_to_num(name_buf);
+        if(num == -1){
+          fprintf(2, "strace: unknown syscall: %s\n", name_buf);
+          exit(1);
+        }
+
+        mask |= (1 << num);
+
+        if(c == '\0') break;
+        start_name = syscall_list + i + 1;
+      }
     }
 
-    mask = (1 << num);
     start = 3;
   } else if(argv[1][0] >= '0' && argv[1][0] <= '9'){
     mask = atoi(argv[1]);
