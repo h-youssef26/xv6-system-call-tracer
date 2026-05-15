@@ -33,8 +33,12 @@ main(int argc, char *argv[])
 
   trace(mask);
 
-  exec(argv[start], &argv[start]);
+  argv[start + argc - start] = 0;
 
-  fprintf(2, "strace: exec %s failed\n", argv[start]);
-  exit(1);
+  if(exec(argv[start], argv + start) < 0){
+    fprintf(2, "strace: exec %s failed\n", argv[start]);
+  }
+
+  exit(0);
+
 }

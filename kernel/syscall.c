@@ -164,21 +164,29 @@ syscall(void)
 
   num = p->trapframe->a7;
 
-  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    ret = syscalls[num]();
-    p->trapframe->a0 = ret;
-
-    if((p->trace_mask & (1 << num)) != 0) {
-      char *name = "unknown";
-      if(num < NELEM(syscall_names) && syscall_names[num])
-        name = syscall_names[num];
-
-      printf("\n%d: syscall %s -> %d\n", p->pid, name, ret);
-    }
-  } else {
+  if(num <= 0 || num >= NELEM(syscalls) || syscalls[num] == 0) {
     printf("%d %s: unknown sys call %d\n",
            p->pid, p->name, num);
     p->trapframe->a0 = -1;
+    return;
   }
+
+  ret = syscalls[num]();
+  p->trapframe->a0 = ret;
+
+  if((p->trace_mask & (1 << num)) != 0) {
+
+  // Ignore write syscalls
+  if(num != SYS_write) {
+
+    char *name = "unknown";
+
+    if(num >= 0 && num < NELEM(syscall_names) && syscall_names[num]) {
+      name = syscall_names[num];
+    }
+
+    printf("%s() = %d\n", name, ret);
+  }
+}
 }
 
